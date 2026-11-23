@@ -1,196 +1,71 @@
 # Util functions
 
-<!-- TOC depthFrom:2 -->
+## Strings, urls and identifiers
 
-- Value encoding & decoding
-    - [property(name)](#propertyname)
-    - [keyword(name)](#keywordname)
-    - [ident](#ident)
-    - [string](#string)
-    - [url](#url)
-- AST transforming
-    - [clone(ast)](#cloneast)
-    - [fromPlainObject(object)](#fromplainobjectobject)
-    - [toPlainObject(ast)](#toplainobjectast)
+CSS text escapes things, and these turn the written form into the value it stands for and back.
 
-<!-- /TOC -->
+```go
+csstree.DecodeString(csstree.Text(`"a\62 c"`))      // abc
+csstree.EncodeString(csstree.Text(`a"b`), false)    // "a\"b"
+csstree.EncodeString(csstree.Text("a'b"), true)     // 'a\'b'   (apostrophe quoting)
 
-## Value encoding & decoding
-### property(name)
+csstree.DecodeURL(csstree.Text("url( a )"))         // a
+csstree.EncodeURL(csstree.Text("a b"))              // url(a\ b)
 
-Returns details for a property name, such as vendor prefix, used hack etc. Using for safe test of declaration property names, i.e. `Declaration.property`.
-
-```js
-import * as csstree from 'css-tree';
-
-csstree.property('*-vendor-property');
-// {
-//     basename: 'property',
-//     name: '-vendor-property',
-//     hack: '*',
-//     vendor: '-vendor-',
-//     prefix: '*-vendor-',
-//     custom: false
-// }
-
-csstree.property('--test-var');
-// {
-//     basename: '--test-var',
-//     name: '--test-var',
-//     hack: '',
-//     vendor: '',
-//     prefix: '',
-//     custom: true
-// };
+csstree.DecodeIdent(csstree.Text(`a\62 c`))         // abc
+csstree.EncodeIdent(csstree.Text("1a"))             // \31 a
 ```
 
-`property()` function normalizes a name to lower case, except custom property names since they are case-sensitive. It returns the same immutable (frozen) object for the same input (input after normalization).
+`EncodeString`, `EncodeURL` and `EncodeIdent` follow § 2.1 of CSSOM, so what they write reads back
+as the value they were given: a NULL becomes the replacement character, a control character becomes
+a hexadecimal escape with a space after it where one is needed, and a character that would end the
+token is escaped with a backslash.
 
-```js
-csstree.property('name') === csstree.property('NAME')         // true
-csstree.property('NAME').name === 'name'                      // true
-csstree.property('--custom') === csstree.property('--Custom') // false
+## Names
 
-const info = csstree.property('NAME');
-info.name === 'name'; // true
-info.name = 'foo';    // have no effect
-info.name === 'name'; // true
+```go
+keyword := csstree.Keyword(csstree.Text("-WEBKIT-Foo"))
+// Name "-webkit-foo", Vendor "-webkit-", Basename "foo", Custom false
+
+property := csstree.Property(csstree.Text("*-moz-Box"))
+// Hack "*", Name "-moz-box", Vendor "-moz-", Prefix "*-moz-", Basename "box", Custom false
+
+csstree.IsCustomProperty(csstree.Text("--x"), 0)    // true
+csstree.VendorPrefix(csstree.Text("-webkit-a"), 0)  // -webkit-
 ```
 
-Supported hacks:
+A keyword is lower cased; a property name is lower cased unless it is a custom property, whose
+case is kept because a custom property name is case sensitive. `Hack` is the character a stylesheet
+may put in front of a property name to hide it from some browsers (`*`, `_`, `$`, `#`, `+`, `&`,
+`/` or `//`).
 
-- `_` in the beginning
-- `+` in the beginning
-- `#` in the beginning
-- `*` in the beginning
-- `$` in the beginning
-- `/` in the beginning
-- `//` in the beginning
+## Tokens
 
-### keyword(name)
+```go
+csstree.Tokenize(csstree.Text("a{}"), func(tokenType, start, end int) {
+    fmt.Println(csstree.TokenName(tokenType), start, end)
+})
 
-Mostly the same as `property()` function, but without hack detection. Using for any identifier except declaration property name.
-
-```js
-import * as csstree from 'css-tree';
-
-csstree.keyword('-vendor-keyword');
-// {
-//     basename: 'keyword',
-//     name: '-vendor-keyword',
-//     vendor: '-vendor-',
-//     prefix: '-vendor-',
-//     custom: false
-// };
+stream := csstree.NewTokenStream(csstree.Text("a{b:c}"))
+for stream.TokenType != 0 { // 0 is the EOF token
+    fmt.Println(csstree.TokenName(stream.TokenType), stream.TokenStart, stream.TokenEnd)
+    stream.Next()
+}
 ```
 
-### ident
+`Tokenize` hands every token to the callback as it reads it. A `TokenStream` reads the whole text
+first, which lets it be walked, looked ahead in, and asked which token closes the block another
+one opens.
 
-Decode and encode of `ident` token values.
+## JSON
 
-```js
-import { ident } from 'css-tree';
+```go
+plain := csstree.ToPlainObject(tree)
+text := csstree.JSON(plain, 2)              // the tree as indented JSON
+back := csstree.FromPlainObject(plain)      // and back into a tree
 
-ident.decode('hello\\9 \\ world')   // hello\t world
-ident.encode('hello\t world')       // hello\9 \ world
+value, err := csstree.ParseJSON(csstree.Text(`{"b":1,"a":2}`))
 ```
 
-### string
-
-Decode and encode of `string` token values.
-
-```js
-import { string } from 'css-tree';
-
-string.decode('"hello\\9  \\"world\\""') // hello\t "world"
-string.decode('\'hello\\9  "world"\'')   // hello\t "world"
-string.encode('hello\t "world"')         // "hello\9  \"world\""
-string.encode('hello\t "world"', true)   // 'hello\9  "world"'
-```
-
-### url
-
-Decode and encode of `url` token values.
-
-```js
-import { url } from 'css-tree';
-
-url.decode('url(file\ \(1\).ext)')  // file (1).ext
-url.encode('file (1).ext')          // url(file\ \(1\).ext)
-```
-
-## AST transforming
-
-### clone(ast)
-
-Make AST deep copy.
-
-```js
-const orig = csstree.parse('.test { color: red }');
-const copy = csstree.clone(orig);
-
-csstree.walk(copy, function(node) {
-    if (node.type === 'ClassSelector') {
-        node.name = 'replaced';
-    }
-});
-
-console.log(csstree.generate(orig));
-// .test{color:red}
-console.log(csstree.generate(copy));
-// .replaced{color:red}
-```
-
-## fromPlainObject(object)
-
-`fromPlainObject()` walks through AST and coverts each `children` value into a `List` instance when value is an array.
-
-```js
-import * as csstree from 'css-tree';
-
-const ast = {
-    type: 'SelectorList',
-    children: []
-};
-
-Array.isArray(ast.children)          // true
-ast.children instanceof csstree.List // false
-
-ast = csstree.fromPlainObject(ast);
-
-Array.isArray(ast.children)          // false
-ast.children instanceof csstree.List // true
-```
-
-Function mutates the passed AST. Use `clone()` function before passing AST to `fromPlainObject()` in case you want to avoid original tree mutation.
-
-```js
-astClone = csstree.fromPlainObject(csstree.clone(ast));
-```
-
-## toPlainObject(ast)
-
-`fromPlainObject()` walks through AST and coverts each `children` value to regular array when value is a `List` instance.
-
-```js
-import * as csstree from 'css-tree';
-
-const ast = {
-    type: 'SelectorList',
-    children: new List()
-};
-
-Array.isArray(ast.children)          // false
-ast.children instanceof csstree.List // true
-
-ast = csstree.toPlainObject(ast);
-
-Array.isArray(ast.children)          // true
-ast.children instanceof csstree.List // false
-```
-
-Function mutates the passed AST. Use `clone()` function before passing AST to `toPlainObject()` in case you want to avoid original tree mutation.
-
-```js
-ast = csstree.toPlainObject(csstree.clone(ast));
-```
+`JSON` writes the keys in the order they were set, which for a node is `type`, `loc` and then the
+node's own fields in the order the parser set them. `ParseJSON` keeps that order too.

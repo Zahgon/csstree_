@@ -76,48 +76,48 @@ body {
 
 An AST for this CSS might look like:
 
-```js
+```json
 {
-    type: 'StyleSheet',
-    loc: null,
-    children: [
+    "type": "StyleSheet",
+    "loc": null,
+    "children": [
         {
-            type: 'Rule',
-            loc: null,
-            prelude: {
-                type: 'SelectorList',
-                loc: null,
-                children: [
+            "type": "Rule",
+            "loc": null,
+            "prelude": {
+                "type": "SelectorList",
+                "loc": null,
+                "children": [
                     {
-                        type: 'Selector',
-                        loc: null,
-                        children: [
+                        "type": "Selector",
+                        "loc": null,
+                        "children": [
                             {
-                                type: 'TypeSelector',
-                                loc: null,
-                                name: 'body'
+                                "type": "TypeSelector",
+                                "loc": null,
+                                "name": "body"
                             }
                         ]
                     }
                 ]
             },
-            block: {
-                type: 'Block',
-                loc: null,
-                children: [
+            "block": {
+                "type": "Block",
+                "loc": null,
+                "children": [
                     {
-                        type: 'Declaration',
-                        loc: null,
-                        important: false,
-                        property: 'color',
-                        value: {
-                            type: 'Value',
-                            loc: null,
-                            children: [
+                        "type": "Declaration",
+                        "loc": null,
+                        "important": false,
+                        "property": "color",
+                        "value": {
+                            "type": "Value",
+                            "loc": null,
+                            "children": [
                                 {
-                                    type: 'Identifier',
-                                    loc: null,
-                                    name: 'red'
+                                    "type": "Identifier",
+                                    "loc": null,
+                                    "name": "red"
                                 }
                             ]
                         }
@@ -149,29 +149,31 @@ Type: `Object` or `null`
 
 Information about the position in the source string that corresponds to the node. It has the following structure:
 
-```js
-{
-    source: String,
-    start: {
-        offset: Number,
-        line: Number,
-        column: Number
-    },
-    end: {
-        offset: Number,
-        line: Number,
-        column: Number
-    }
+```go
+type Location struct {
+    Source Str      // the file name a parse was given, or "<unknown>"
+    Start  Position // where the node begins
+    End    Position // where it ends
+}
+
+type Position struct {
+    Offset int // in UTF-16 code units from the start of the source
+    Line   int
+    Column int
 }
 ```
 
-The `source` property contains value of `options.filename` if passed to `csstree.parse()`, otherwise `"<unknown>"`.
+`Source` holds `ParseOptions.Filename` when one was given, and `"<unknown>"` otherwise.
 
-The `offset` number is zero-based, indicates the index in a source string passed to the parser.
+`Offset` is zero based: it is the index into the source the parser was given, counted in UTF-16
+code units, which is what every offset in this library is counted in.
 
-The `line` and `column` numbers are 1-based: the first line is `1` and the first column of a line is `1`.
+`Line` and `Column` are one based: the first line is `1` and the first column of a line is `1`.
+`ParseOptions.Offset`, `.Line` and `.Column` shift them, for CSS that was cut out of a larger file.
 
-The `loc` property lets you know from which source file the node comes from (if available) and what part of that file was parsed into the node. By default parser doesn't include `loc` data into the AST (sets `null` for this property), you should pass `options.positions` equal to `true` to make `loc` filled.
+`Loc` says which file a node came from and which part of that file was read into it. A parse does
+not record it unless `ParseOptions.Positions` is set; until then it is `nil`, and the JSON of a
+tree writes it as `null`.
 
 ### children
 

@@ -31,17 +31,12 @@ Arguments:
 - **source**: `string`  
   A definition to parse
 
-```js
-import { definitionSyntax } from 'css-tree';
+```go
+import csstree "github.com/csstree/csstree"
 
-definitionSyntax.parse('foo | bar');
-// { Group
-//   terms: 
-//    [ { Keyword name: 'foo' },
-//      { Keyword name: 'bar' } ],
-//   combinator: '|',
-//   disallowEmpty: false,
-//   explicit: false }
+definition, err := csstree.ParseDefinition(csstree.Text("foo | bar"))
+// a Group whose terms are the keywords foo and bar,
+// with combinator "|", disallowEmpty false and explicit false
 ```
 
 ## walk(node, options, context)
@@ -55,17 +50,13 @@ Arguments:
 - **context** (optional): `any`  
   Defines a value as `this` in enter and leave handlers.
 
-```js
-import { definitionSyntax } from 'css-tree';
+```go
+definition, _ := csstree.ParseDefinition(csstree.Text("foo | bar"))
 
-const ast = definitionSyntax.parse('foo | bar');
-
-definitionSyntax.walk(ast, {
-    enter(node) {
-        console.log('enter', node.type, node.combinator || node.name || '');
-    },
-    leave(node) {
-        console.log('leave', node.type, node.combinator || node.name || '');
+csstree.WalkDefinition(definition, func(node *csstree.Definition) {
+    fmt.Println("enter", node.Type)
+}, func(node *csstree.Definition) {
+    fmt.Println("leave", node.Type)
     }
 });
 // enter Group |
@@ -96,15 +87,13 @@ definitionSyntax.walk(ast, node =>
   - **decorate**: `function(nodeGenerateResult, node)`  
     A function to post-process result of node translation to a string. Handy to make some kind of result wrapping.
 
-```js
-import { definitionSyntax } from 'css-tree';
+```go
+definition, _ := csstree.ParseDefinition(csstree.Text("foo && bar || [ baz | qux ]"))
 
-const ast = definitionSyntax.parse('foo && bar || [ baz | qux ]');
-
-definitionSyntax.generate(ast);
+text, _ := csstree.GenerateDefinition(definition, false, false)
 // "foo && bar || [ baz | qux ]"
 
-definitionSyntax.generate(ast, { compact: true });
+compact, _ := csstree.GenerateDefinition(definition, false, true)
 // "foo&&bar||[baz|qux]"
 
 definitionSyntax.generate(ast, { forceBraces: true });
@@ -124,20 +113,40 @@ definitionSyntax.generate(ast, {
 
 ### AtKeyword
 
-```js
+```go
 {
-    type: "AtKeyword",
-    name: String
+    Type: "AtKeyword"
+    Name: Str
 }
 ```
 
 A CSS at-keyword token (a keyword prescended by commertial at), e.g. `@media` or `@keyframes`.
 
+## Reading a definition node
+
+A parsed definition is a `*csstree.Definition`. Its `Type` says which of the shapes below it is,
+and its other fields are read by name, because a node carries exactly the fields its own shape
+calls for and in the order they were set:
+
+```go
+definition, _ := csstree.ParseDefinition(csstree.Text("<length>#{1,4}"))
+
+definition.Type                 // "Multiplier"
+definition.Num("min")           // 1
+definition.Num("max")           // 4
+definition.Bool("comma")        // true
+definition.Child("term").Type   // "Type"
+definition.Terms("terms")       // the terms of a Group
+definition.Str("name")          // the name of a Type, Keyword, Property or Function
+```
+
+The shapes below name each field with the type of value it holds.
+
 ### Comma
 
-```js
+```go
 {
-    type: "Comma"
+    Type: "Comma"
 }
 ```
 
@@ -145,10 +154,10 @@ Just a comma. Comma is widely used and has complicated rules in definition synta
 
 ### Function
 
-```js
+```go
 {
-    type: "Function",
-    name: String
+    Type: "Function"
+    Name: Str
 }
 ```
 
@@ -156,13 +165,13 @@ A CSS function token (a keyword followed by left parenthesis), e.g. `foo(` or `r
 
 ### Group
 
-```js
+```go
 {
-    type: "Group",
-    terms: Array.<Object>,
-    combinator: String,
-    disallowEmpty: Boolean,
-    explicit: Boolean
+    Type: "Group"
+    Terms: Array.<Object>
+    Combinator: Str
+    DisallowEmpty: bool
+    Explicit: bool
 }
 ```
 
@@ -174,10 +183,10 @@ A conjunction of `terms` joined by a `combinator`.
 
 ### Keyword
 
-```js
+```go
 {
-    type: "Keyword",
-    name: String
+    Type: "Keyword"
+    Name: Str
 }
 ```
 
@@ -185,13 +194,13 @@ A keyword value (such as `auto`, `green`, `none` etc) which appear literally.
 
 ### Multiplier
 
-```js
+```go
 {
-    type: "Multiplier",
-    comma: Boolean,
-    min: Number,
-    max: Number,
-    term: Object
+    Type: "Multiplier"
+    Comma: bool
+    Min: float64
+    Max: float64
+    Term: Object
 }
 ```
 
@@ -225,10 +234,10 @@ A multipler of a term.
 
 ### Property
 
-```js
+```go
 {
-    type: "Property",
-    name: String
+    Type: "Property"
+    Name: Str
 }
 ```
 
@@ -236,11 +245,11 @@ A reference to property definition, e.g. `<'property'>`.
 
 ### Range
 
-```js
+```go
 {
-    type: "Range",
-    min: Number | null,
-    max: Number | null
+    Type: "Range"
+    Min: Number | null
+    Max: Number | null
 }
 ```
 
@@ -291,10 +300,10 @@ Represents [bracketed range notation](https://drafts.csswg.org/css-values-4/#num
 
 ### String
 
-```js
+```go
 {
-    type: "String",
-    value: String
+    Type: "String"
+    Value: Str
 }
 ```
 
@@ -302,10 +311,10 @@ A sequence of characters.
 
 ### Token
 
-```js
+```go
 {
-    type: "Token",
-    value: String
+    Type: "Token"
+    Value: Str
 }
 ```
 
@@ -314,11 +323,11 @@ Any single code point isn't consumed by any other production excluding whitespac
 
 ### Type
 
-```js
+```go
 {
-    type: "Type",
-    name: String,
-    opts: Object | null
+    Type: "Type"
+    Name: Str
+    Opts: Object | null
 }
 ```
 
